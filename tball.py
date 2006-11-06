@@ -48,7 +48,7 @@ def memoized1(func):
 
 def add_feeds(feeds):
     logger = get_logger()
-    feedlist = get_feed_list()
+    feedlist = get_data('feeds', [])
 
     for feed_url in feeds:
         if feed_url not in feedlist:
@@ -60,23 +60,31 @@ def add_feeds(feeds):
             feedlist.append(feed_url)
             logger.info('feed added %s', feed_url)
 
-    save_feed_list(feedlist)
+    set_data('feeds', feedlist)
 
 
 def del_feeds(feeds):
     logger = get_logger()
-    feedlist = get_feed_list()
-    save = False
+    feedlist = get_data('feeds')
+    if feedlist:
+        save = False
+        for feed_url in feeds:
+            try:
+                feedlist.remove(feed_url)
+                save = True
+            except ValueError:
+                pass
 
-    for feed_url in feeds:
-        try:
-            feedlist.remove(feed_url)
-            save = True
-        except ValueError:
-            pass
+        if save:
+            set_data('feeds', feedlist)
 
-    if save:
-        save_feed_list(feedlist)
+
+def get_data(key, default=None):
+    dbm = get_db()
+    try:
+        return pickle.loads(dbm[str(key)])
+    except (pickle.PickleError, KeyError):
+        return default
 
 
 @memoized1
@@ -123,20 +131,12 @@ def get_external_links(baseurl, content):
             yield url 
 
 
-def get_feed_list():
-    dbm = get_db()
-    try:
-        return pickle.loads(dbm['feeds'])
-    except KeyError:
-        return []
-
-
 def get_http_response(url, params=None, referer=None):
     if params:
         params = urllib.urlencode(params)
 
     headers = {'User-Agent': "Trackback 'em All/" + __version__}
-    if referral:
+    if referer:
         headers['Referer'] = referer
     request = urllib2.Request(url, params, headers)
 
@@ -281,7 +281,7 @@ def get_trackback_url(response):
 
 
 def list_feeds():
-    feedlist = get_feed_list()
+    feedlist = get_data('feeds')
     feedlist.sort()
     for feed in feedlist:
         print feed
@@ -289,26 +289,21 @@ def list_feeds():
 
 def main():
     option = get_option()
-    if option.feed_add:
-        add_feeds(option.feed_add)
-    if option.feed_del:
-        del_feeds(option.feed_del)
-    if option.feed_list:
-        list_feeds()
+    if option.feed_add or option.feed_del or option.feed_list:
+        if option.feed_add:
+            add_feeds(option.feed_add)
+        if option.feed_del:
+            del_feeds(option.feed_del)
+        if option.feed_list:
+            list_feeds()
     else:
         process_all()
 
 
 def process_all():
-    dbm = get_db()
-
-    for feed_url in get_feed_list():
-        try:
-            etag = dbm['etag:%s' % feed_url]
-        except KeyError:
-            etag = None
-
-        feed = feedparser.parse(feed_url, etag=etag)
+    for feed_url in get_data('feeds', []):
+        feedmeta = get_data('feed:%s' % feed_url, {})
+        feed = feedparser.parse(feed_url, etag=feedmeta.get('etag'))
         if feed.status == 304:
             get_logger().info('skip unmodified feed %s', feed_url)
         elif feed.bozo:
@@ -316,33 +311,34 @@ def process_all():
                 feed.bozo_exception)
         else:
             if feed.etag:
-                dbm['etag:%s' % feed_url] = feed.etag
+                feedmeta['etag'] = feed.etag
+            feedmeta['time'] = time.time()
+            set_data('feed:%s' % feed_url, feedmeta)
+
             process_feed(feed)
 
 
 def process_entry(feed, entry):
     import md5
 
-    dbm = get_db()
     option = get_option()
     logger = get_logger()
 
+    entrymeta = get_data('entry:%s' % entry.link, {})
+
     content = get_entry_content(entry)
     contentmd5 = md5.new(content.encode('utf8')).hexdigest()
-    dbkey = str('md5:%s' % entry.link)
-    try:
-        if dbm[dbkey] == contentmd5:
-            logger.debug('skip entry %s', entry.link)
-            return
-    except KeyError:
-        pass
+    if entrymeta.get('md5') == contentmd5:
+        logger.debug('skip entry %s', entry.link)
+        return
+    entrymeta.update({'md5': contentmd5, 'time': time.time()})
+    set_data('entry:%s' % entry.link, entrymeta)
 
-    dbm[dbkey] = contentmd5
     logger.info('process entry %s', entry.link)
 
     for url in get_external_links(feed.feed.link, content):
-        dbkey = str('tb:%s:%s' % (entry.link, url))
-        if dbkey in dbm:
+        dbkey = 'link:%s:%s' % (entry.link, url)
+        if get_data(dbkey):
             logger.debug('skip external link %s', url)
             continue
 
@@ -352,32 +348,28 @@ def process_entry(feed, entry):
             continue
 
         # Check for Pingback first as it is lighter on our side.
+        success = False
         pburl = get_pingback_url(response)
         if pburl:
             logger.info('send pingback %s', pburl)
             if not option.pretend:
-                send_pingback(pburl, entry.link, url)
+                success = send_pingback(pburl, entry.link, url)
         else:
             # Check for trackback.
             tburl = get_trackback_url(response)
             if tburl:
                 logger.info('send trackback %s', tburl) 
                 if not option.pretend:
-                    send_trackback(tburl, entry.link, entry.title,
+                    success = send_trackback(tburl, entry.link, entry.title,
                         get_trackback_excerpt(url, content), feed.feed.title)
 
-        dbm[dbkey] = str(time.time())
+        set_data(dbkey, {'success': success, 'time': time.time()})
 
 
 def process_feed(feed):
     get_logger().info('process feed %s', feed.feed.link)
     for entry in feed.entries:
         process_entry(feed, entry)
-
-
-def save_feed_list(feed_list):
-    dbm = get_db()
-    dbm['feeds'] = pickle.dumps(feed_list)
 
 
 def send_pingback(pburl, source, target):
@@ -420,6 +412,12 @@ def send_trackback(tburl, url, title=None, excerpt=None, blog_name=None):
         return error == 0
 
     return False
+
+
+def set_data(key, val):
+    dbm = get_db()
+    dbm[str(key)] = pickle.dumps(val)
+    return val
 
 
 def unescape(url):
