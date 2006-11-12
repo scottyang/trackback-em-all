@@ -160,8 +160,8 @@ def get_logger():
     logger.setLevel(level)
 
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter(
-        '%(asctime)s %(name)s[%(thread)d]: %(message)s', '%b %d %H:%M:%S'))
+    handler.setFormatter(logging.Formatter('%(asctime)s: %(message)s', 
+        '%b %d %H:%M:%S'))
     logger.addHandler(handler)
     logger.propagate = False
 
@@ -351,14 +351,14 @@ def process_entry(feed, entry):
         success = False
         pburl = get_pingback_url(response)
         if pburl:
-            logger.info('send pingback %s', pburl)
+            logger.warn('send pingback %s', pburl)
             if not option.pretend:
                 success = send_pingback(pburl, entry.link, url)
         else:
             # Check for trackback.
             tburl = get_trackback_url(response)
             if tburl:
-                logger.info('send trackback %s', tburl) 
+                logger.warn('send trackback %s', tburl) 
                 if not option.pretend:
                     success = send_trackback(tburl, entry.link, entry.title,
                         get_trackback_excerpt(url, content), feed.feed.title)
