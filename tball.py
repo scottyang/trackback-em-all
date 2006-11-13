@@ -1,18 +1,66 @@
 #!/usr/bin/env python
 
+"""Trackback 'em All
+
+A command line trackback/pingback client that
+
+(1) Scan a list of RSS feeds with full-text
+(2) Pingback or trackback all links found in the feed entries
+
+It is useful if your blogging software does not have trackback/pingback
+capability, not functioning properly, or pingback/trackback is just way too
+slow at the end of posting.
+
+It can be executed periodically. Etag in HTTP header is honoured, and it will
+not send ping/trackback a page that has already been sent.
+
+For more information, visit
+
+    http://fucoder.com/code/trackback-em-all/
+
+Required: Python 2.4 <http://python.org/>
+Required: FeedParser <http://feedparser.org/>
+
+Copyright (c) 2006 Scott Yang <scotty@yang.id.au>
+
+"Trackback 'em All" is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or (at your option) any
+later version.
+
+"""
+
+__author__ = 'Scott Yang <scotty@yang.id.au>'
+__version__ = '$Rev$'
+
+import sys
+if sys.hexversion <= 0x2040000:
+    print >> sys.stderr, """\
+Error: tball.py requires minimum Python version 2.4.
+"""
+    sys.exit(1)
+
+# Ensure FeedParser can be imported.
+try:
+    import feedparser
+except ImportError:
+    print >> sys.stderr, """\
+Error: Cannot import Python module "feedparser".  Please download and install 
+this module from the following website:
+
+    http://feedparser.sourceforge.net/
+"""
+    sys.exit(1)
+
 import Queue
-import feedparser
 import os
 import pickle
 import re
-import sys
+import threading
 import time
 import urllib
 import urllib2
 import urlparse
-
-__author__ = 'Scott Yang <scotty@yang.id.au>'
-__version__ = '$Rev$'
 
 
 class ResponseProxy(object):
@@ -80,12 +128,19 @@ def del_feeds(feeds):
             set_data('feeds', feedlist)
 
 
+db_lock = threading.Lock()
+
+
 def get_data(key, default=None):
     dbm = get_db()
+    db_lock.acquire()
     try:
-        return pickle.loads(dbm[str(key)])
-    except (pickle.PickleError, KeyError):
-        return default
+        try:
+            return pickle.loads(dbm[str(key)])
+        except (pickle.PickleError, KeyError):
+            return default
+    finally:
+        db_lock.release()
 
 
 @memoized1
@@ -212,6 +267,13 @@ def get_pingback_url(response):
 
 
 def get_trackback_excerpt(url, content):
+    """Extract an excerpt from HTML content.
+
+    It takes an URL and a piece of HTML document, and try to extract the
+    paragraph around the URL link. The algorithm is taking from WordPress'
+    pingback function in <wordpress>/xmlrpc.php
+
+    """
     class sub_callback(object):
         re_quote = '"\''
         re_href = re.compile('href=[' + re_quote + ']?([^' + re_quote + '>]+)')
@@ -304,8 +366,6 @@ def main():
 
 
 def process_all():
-    import threading
-
     feeds = get_data('feeds', [])
     count = min(get_option().thread, len(feeds))
 
@@ -452,7 +512,11 @@ def send_trackback(tburl, url, title=None, excerpt=None, blog_name=None):
 
 def set_data(key, val):
     dbm = get_db()
-    dbm[str(key)] = pickle.dumps(val)
+    db_lock.acquire()
+    try:
+        dbm[str(key)] = pickle.dumps(val)
+    finally:
+        db_lock.release()
     return val
 
 
