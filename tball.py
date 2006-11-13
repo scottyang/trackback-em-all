@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import Queue
 import feedparser
 import os
 import pickle
@@ -160,8 +161,8 @@ def get_logger():
     logger.setLevel(level)
 
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter('%(asctime)s: %(message)s', 
-        '%b %d %H:%M:%S'))
+    handler.setFormatter(logging.Formatter(
+        '%(asctime)s [%(thread)d]: %(message)s', '%b %d %H:%M:%S'))
     logger.addHandler(handler)
     logger.propagate = False
 
@@ -173,7 +174,7 @@ def get_option():
     from optparse import OptionParser
     
     parser = OptionParser()
-    parser.set_defaults(dbfile=get_default_dbfile())
+    parser.set_defaults(dbfile=get_default_dbfile(), thread=1)
     parser.add_option('-d', '--dbfile', action='store', dest='dbfile',
         help='Database file. Default=%default', metavar='FILE')
     parser.add_option('-q', action='count', dest='quiet',
@@ -182,6 +183,8 @@ def get_option():
         help='Be more verbose in output')
     parser.add_option('-p', '--pretend', action='store_true', dest='pretend',
         help='Pretend mode, no actual trackback')
+    parser.add_option('-t', '--thread', action='store', dest='thread',
+        help='Number of concurrent threads. Default=%default', type='int')
     parser.add_option('-A', '--add', action='append', dest='feed_add',
         help='Add feed', metavar='URL')
     parser.add_option('-D', '--del', action='append', dest='feed_del',
@@ -301,21 +304,30 @@ def main():
 
 
 def process_all():
-    for feed_url in get_data('feeds', []):
-        feedmeta = get_data('feed:%s' % feed_url, {})
-        feed = feedparser.parse(feed_url, etag=feedmeta.get('etag'))
-        if feed.status == 304:
-            get_logger().info('skip unmodified feed %s', feed_url)
-        elif feed.bozo:
-            get_logger().warn('error feed %s: %s', feed_url, 
-                feed.bozo_exception)
-        else:
-            if feed.etag:
-                feedmeta['etag'] = feed.etag
-            feedmeta['time'] = time.time()
-            set_data('feed:%s' % feed_url, feedmeta)
+    import threading
 
+    feeds = get_data('feeds', [])
+    count = min(get_option().thread, len(feeds))
+
+    if not feeds:
+        return
+    elif count <= 1:
+        for feed in feeds:
             process_feed(feed)
+    else:
+        queue = Queue.Queue(len(feeds))
+        for feed in feeds:
+            queue.put(feed)
+
+        threads = []
+        for thread in xrange(count):
+            thread = threading.Thread(target=process_thread, args=(queue, ))
+            thread.setDaemon(True)
+            thread.start()
+            threads.append(thread)
+
+        for thread in threads:
+            thread.join()
 
 
 def process_entry(feed, entry):
@@ -366,10 +378,34 @@ def process_entry(feed, entry):
         set_data(dbkey, {'success': success, 'time': time.time()})
 
 
-def process_feed(feed):
-    get_logger().info('process feed %s', feed.feed.link)
-    for entry in feed.entries:
-        process_entry(feed, entry)
+def process_feed(feed_url):
+    feedmeta = get_data('feed:%s' % feed_url, {})
+    feed = feedparser.parse(feed_url, etag=feedmeta.get('etag'))
+    if feed.status == 304:
+        get_logger().info('skip unmodified feed %s', feed_url)
+    elif feed.bozo:
+        get_logger().warn('error feed %s: %s', feed_url, 
+            feed.bozo_exception)
+    else:
+        if feed.etag:
+            feedmeta['etag'] = feed.etag
+        feedmeta['time'] = time.time()
+        set_data('feed:%s' % feed_url, feedmeta)
+
+        get_logger().info('process feed %s', feed.feed.link)
+        for entry in feed.entries:
+            process_entry(feed, entry)
+
+
+def process_thread(queue):
+    get_logger().debug('Thread started')
+    while True:
+        try:
+            feed = queue.get(False)
+        except Queue.Empty:
+            break
+        else:
+            process_feed(feed)
 
 
 def send_pingback(pburl, source, target):
