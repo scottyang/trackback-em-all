@@ -198,7 +198,8 @@ def get_http_response(url, params=None, referer=None):
 
     try:
         response = urllib2.urlopen(request)
-    except urllib2.HTTPError:
+    except (urllib2.URLError, urllib2.HTTPError):
+        get_logger().error('Unable to download %s', url)
         return None
 
     return ResponseProxy(response)
@@ -441,11 +442,11 @@ def process_entry(feed, entry):
 def process_feed(feed_url):
     feedmeta = get_data('feed:%s' % feed_url, {})
     feed = feedparser.parse(feed_url, etag=feedmeta.get('etag'))
-    if feed.status == 304:
-        get_logger().info('skip unmodified feed %s', feed_url)
-    elif feed.bozo:
+    if feed.bozo:
         get_logger().warn('error feed %s: %s', feed_url, 
             feed.bozo_exception)
+    elif feed.status == 304:
+        get_logger().info('skip unmodified feed %s', feed_url)
     else:
         if feed.etag:
             feedmeta['etag'] = feed.etag
