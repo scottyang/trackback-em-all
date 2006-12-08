@@ -150,8 +150,10 @@ def get_db():
 
 
 def get_default_dbfile():
-    filename = os.path.splitext(__file__)
-    return os.path.abspath(filename[0]) + '.db'
+    filename = os.path.splitext(os.path.basename(__file__))
+    filename = os.path.join(os.environ.get('HOME', './'), 
+        '.' + filename[0] + '.db')
+    return os.path.abspath(filename)
 
 
 def get_entry_content(entry):
@@ -442,11 +444,11 @@ def process_entry(feed, entry):
 def process_feed(feed_url):
     feedmeta = get_data('feed:%s' % feed_url, {})
     feed = feedparser.parse(feed_url, etag=feedmeta.get('etag'))
-    if feed.bozo:
+    if feed.get('status') == 304:
+        get_logger().info('skip unmodified feed %s', feed_url)
+    elif feed.bozo:
         get_logger().warn('error feed %s: %s', feed_url, 
             feed.bozo_exception)
-    elif feed.status == 304:
-        get_logger().info('skip unmodified feed %s', feed_url)
     else:
         if feed.etag:
             feedmeta['etag'] = feed.etag
