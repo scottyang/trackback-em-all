@@ -220,7 +220,7 @@ def get_logger():
 
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter(
-        '%(asctime)s [%(thread)d]: %(message)s', '%b %d %H:%M:%S'))
+        '%(asctime)s: %(message)s', '%b %d %H:%M:%S'))
     logger.addHandler(handler)
     logger.propagate = False
 
@@ -349,7 +349,7 @@ def get_trackback_url(response):
 
 
 def list_feeds():
-    feedlist = get_data('feeds')
+    feedlist = get_data('feeds', [])
     feedlist.sort()
     for feed in feedlist:
         print feed
@@ -407,13 +407,12 @@ def process_entry(feed, entry):
         logger.debug('skip entry %s', entry.link)
         return
     entrymeta.update({'md5': contentmd5, 'time': time.time()})
-    set_data('entry:%s' % entry.link, entrymeta)
 
     logger.info('process entry %s', entry.link)
+    linksmeta = entrymeta.setdefault('links', {})
 
     for url in get_external_links(feed.feed.link, content):
-        dbkey = 'link:%s:%s' % (entry.link, url)
-        if get_data(dbkey):
+        if url in linksmeta:
             logger.debug('skip external link %s', url)
             continue
 
@@ -438,7 +437,9 @@ def process_entry(feed, entry):
                     success = send_trackback(tburl, entry.link, entry.title,
                         get_trackback_excerpt(url, content), feed.feed.title)
 
-        set_data(dbkey, {'success': success, 'time': time.time()})
+        linksmeta[url] = success
+
+    set_data('entry:%s' % entry.link, entrymeta)
 
 
 def process_feed(feed_url):
