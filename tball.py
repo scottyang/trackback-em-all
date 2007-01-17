@@ -478,11 +478,15 @@ def send_pingback(pburl, source, target):
     rpc = xmlrpclib.ServerProxy(pburl)
     try:
         msg = rpc.pingback.ping(source, target)
-        logger.info('pingback success: %s', msg)
-        return True
     except xmlrpclib.Fault, ex:
         logger.warn('pingback fault: %s %s', ex.faultCode, ex.faultString)
         return False
+    except:
+        logger.exception('Uncaught exception from ping server')
+        return False
+    else:
+        logger.info('pingback success: %s', msg)
+        return True
 
 
 def send_trackback(tburl, url, title=None, excerpt=None, blog_name=None):
