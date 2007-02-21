@@ -191,9 +191,6 @@ def get_external_links(baseurl, content):
 
 def get_http_response(url, params=None, referer=None):
     if params:
-        for key, val in params.items():
-            if isinstance(val, unicode):
-                params[key] = val.encode('utf8')
         params = urllib.urlencode(params)
 
     headers = {'User-Agent': "Trackback 'em All/" + __version__}
@@ -359,6 +356,10 @@ def list_feeds():
 
 
 def main():
+    # XXX: This is a hack to make utf8 the default encoding.
+    reload(sys)
+    sys.setdefaultencoding('utf8')
+
     option = get_option()
     if option.feed_add or option.feed_del or option.feed_list:
         if option.feed_add:
@@ -405,7 +406,7 @@ def process_entry(feed, entry):
     entrymeta = get_data('entry:%s' % entry.link, {})
 
     content = get_entry_content(entry)
-    contentmd5 = md5.new(content.encode('utf8')).hexdigest()
+    contentmd5 = md5.new(content).hexdigest()
     if entrymeta.get('md5') == contentmd5:
         logger.debug('skip entry %s', entry.link)
         return
