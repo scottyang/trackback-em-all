@@ -191,6 +191,9 @@ def get_external_links(baseurl, content):
 
 def get_http_response(url, params=None, referer=None):
     if params:
+        for key, val in params.items():
+            if isinstance(val, unicode):
+                params[key] = val.encode('utf8')
         params = urllib.urlencode(params)
 
     headers = {'User-Agent': "Trackback 'em All/" + __version__}
