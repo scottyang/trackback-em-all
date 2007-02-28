@@ -21,7 +21,7 @@ For more information, visit
 Required: Python 2.4 <http://python.org/>
 Required: FeedParser <http://feedparser.org/>
 
-Copyright (c) 2006 Scott Yang <scotty@yang.id.au>
+Copyright (c) 2006-2007 Scott Yang <scotty@yang.id.au>
 
 "Trackback 'em All" is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
@@ -31,7 +31,7 @@ later version.
 """
 
 __author__ = 'Scott Yang <scotty@yang.id.au>'
-__version__ = '$Rev$'
+__version__ = '0.1 $Rev$'
 
 import sys
 if sys.hexversion <= 0x2040000:
@@ -132,6 +132,8 @@ db_lock = threading.Lock()
 
 
 def get_data(key, default=None):
+    """Get the pickled data from the database."""
+
     dbm = get_db()
     db_lock.acquire()
     try:
@@ -240,7 +242,7 @@ def get_option():
     parser.add_option('-v', action='count', dest='verbose',
         help='Be more verbose in output')
     parser.add_option('-p', '--pretend', action='store_true', dest='pretend',
-        help='Pretend mode, no actual trackback')
+        help='Pretend mode, no actual trackback/pingback')
     parser.add_option('-t', '--thread', action='store', dest='thread',
         help='Number of concurrent threads. Default=%default', type='int')
     parser.add_option('-A', '--add', action='append', dest='feed_add',
@@ -356,7 +358,8 @@ def list_feeds():
 
 
 def main():
-    # XXX: This is a hack to make utf8 the default encoding.
+    # HACK: We are forcing the system unicode encoding to be UTF8 as it is the
+    # post comment encoding amongst blogs.
     reload(sys)
     sys.setdefaultencoding('utf8')
 
@@ -373,6 +376,13 @@ def main():
 
 
 def process_all():
+    """Main function to process all the feeds.
+
+    This function loads all the feed URLs from the database, fetch all the
+    feeds and process all the entries. It can also optionally process them in
+    parallel to reduce wait on network IO, if -t|--thread is greater than 1.
+
+    """
     feeds = get_data('feeds', [])
     count = min(get_option().thread, len(feeds))
 
@@ -398,6 +408,12 @@ def process_all():
 
 
 def process_entry(feed, entry):
+    """Process Feed Item.
+
+    It takes a feed and an entry value (from feedparser), and try to trackback
+    or pingback all the URLs in the entry.
+
+    """
     import md5
 
     option = get_option()
@@ -466,7 +482,7 @@ def process_feed(feed_url):
 
 
 def process_thread(queue):
-    get_logger().debug('Thread started')
+    get_logger().info('Thread started')
     while True:
         try:
             feed = queue.get(False)
@@ -523,6 +539,8 @@ def send_trackback(tburl, url, title=None, excerpt=None, blog_name=None):
 
 
 def set_data(key, val):
+    """Set pickled data from the database."""
+
     dbm = get_db()
     db_lock.acquire()
     try:
