@@ -31,7 +31,7 @@ later version.
 """
 
 __author__ = 'Scott Yang <scotty@yang.id.au>'
-__version__ = '0.1 $Rev$'
+__version__ = '0.2 $Rev$'
 
 import sys
 if sys.hexversion <= 0x2040000:
@@ -414,7 +414,10 @@ def process_entry(feed, entry):
     or pingback all the URLs in the entry.
 
     """
-    import md5
+    try:
+        from hashlib import md5
+    except ImportError:
+        from md5 import new as md5
 
     option = get_option()
     logger = get_logger()
@@ -422,7 +425,7 @@ def process_entry(feed, entry):
     entrymeta = get_data('entry:%s' % entry.link, {})
 
     content = get_entry_content(entry)
-    contentmd5 = md5.new(content).hexdigest()
+    contentmd5 = md5(content).hexdigest()
     if entrymeta.get('md5') == contentmd5:
         logger.debug('skip entry %s', entry.link)
         return
