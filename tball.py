@@ -16,12 +16,12 @@ not send ping/trackback a page that has already been sent.
 
 For more information, visit
 
-    http://fucoder.com/code/trackback-em-all/
+    http://scott.yang.id.au/code/trackback-em-all/
 
 Required: Python 2.4 <http://python.org/>
 Required: FeedParser <http://feedparser.org/>
 
-Copyright (c) 2006-2007 Scott Yang <scotty@yang.id.au>
+Copyright (c) 2006-2012 Scott Yang <scotty@yang.id.au>
 
 "Trackback 'em All" is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
@@ -31,7 +31,7 @@ later version.
 """
 
 __author__ = 'Scott Yang <scotty@yang.id.au>'
-__version__ = '0.2 $Rev$'
+__version__ = '0.3'
 
 import sys
 if sys.hexversion <= 0x2040000:
@@ -48,7 +48,7 @@ except ImportError:
 Error: Cannot import Python module "feedparser".  Please download and install 
 this module from the following website:
 
-    http://feedparser.sourceforge.net/
+    http://code.google.com/p/feedparser/
 """
     sys.exit(1)
 
@@ -474,7 +474,7 @@ def process_feed(feed_url):
         get_logger().warn('error feed %s: %s', feed_url, 
             feed.bozo_exception)
     else:
-        if feed.etag:
+        if feed.get('etag'):
             feedmeta['etag'] = feed.etag
         feedmeta['time'] = time.time()
         set_data('feed:%s' % feed_url, feedmeta)
